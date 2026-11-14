@@ -130,7 +130,12 @@ async function ensureDbInitialized() {
     db.exec('PRAGMA foreign_keys = ON;');
   } else {
     if (!SQLJS_MODULE) {
-      const initSqlJs = require('sql.js');
+      let initSqlJs;
+      try {
+        initSqlJs = require('sql.js/dist/sql-asm.js');
+      } catch {
+        initSqlJs = require('sql.js');
+      }
       SQLJS_MODULE = await initSqlJs();
     }
     db = new SqlJsDatabaseAdapter(DB_PATH);
@@ -208,17 +213,35 @@ async function sendJson(res, status, data) {
 }
 
 function parseBody(req) {
+  if (req.body !== undefined && req.body !== null) {
+    try {
+      if (Buffer.isBuffer(req.body)) {
+        const str = req.body.toString('utf-8');
+        return Promise.resolve(str ? JSON.parse(str) : {});
+      }
+      if (typeof req.body === 'string') {
+        return Promise.resolve(req.body ? JSON.parse(req.body) : {});
+      }
+      if (typeof req.body === 'object') {
+        return Promise.resolve(req.body);
+      }
+    } catch (err) {
+      return Promise.reject(err);
+    }
+  }
+
   return new Promise((resolve, reject) => {
     const chunks = [];
     let total = 0;
     req.on('data', chunk => {
-      total += chunk.length;
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), 'utf-8');
+      total += buf.length;
       if (total > 25 * 1024 * 1024) {
         reject(new Error('Payload too large'));
         req.destroy();
         return;
       }
-      chunks.push(chunk);
+      chunks.push(buf);
     });
     req.on('end', () => {
       try {
@@ -487,7 +510,19 @@ const requestHandler = async (req, res) => {
     await pullDbFromSupabaseIfConfigured();
 
     const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-    const pathname = urlObj.pathname;
+    let rawPathname = urlObj.searchParams.get('__pathname') || urlObj.pathname;
+    if (rawPathname === '/api/index.js' || rawPathname === '/api/index') {
+      const routeMatches = req.headers['x-now-route-matches'];
+      if (routeMatches) {
+        const matchParams = new URLSearchParams(routeMatches);
+        const captured = matchParams.get('1');
+        if (captured) rawPathname = `/api/${decodeURIComponent(captured)}`;
+      }
+    }
+    if (rawPathname.length > 1) {
+      rawPathname = rawPathname.replace(/\/+$/, '');
+    }
+    const pathname = rawPathname;
     const method = req.method.toUpperCase();
 
     res._isMutatingApi = pathname.startsWith('/api/') &&
@@ -1539,6 +1574,10 @@ const requestHandler = async (req, res) => {
       db.prepare('UPDATE document_settings SET company_logo = ? WHERE id = 1').run(logoB64);
       const updated = db.prepare('SELECT * FROM document_settings WHERE id = 1').get();
       return sendJson(res, 200, updated);
+    }
+
+    if (pathname.startsWith('/api/')) {
+      return sendJson(res, 404, { error: `API endpoint not found: ${pathname}` });
     }
 
     // Static Files
