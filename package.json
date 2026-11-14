@@ -1,0 +1,12 @@
+{
+  "name": "nes-po-pr-wms-management",
+  "version": "1.0.0",
+  "description": "NES-PO, PR (FM-PU-01) & WMS Management Web App for Nawaphol Engineering & Supply Co., Ltd.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "sql.js": "^1.12.0"
+  }
+}

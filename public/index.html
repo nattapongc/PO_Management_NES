@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NES-PO & PR & WMS Management | บจก. นวพล เอ็นจิเนียริ่ง แอนด์ ซัพพลาย</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <!-- 1. Login Overlay (Required before entering system) -->
+  <div class="login-overlay" id="login-overlay">
+    <div class="login-card">
+      <div style="text-align:center; margin-bottom:22px;">
+        <img id="login-logo-img" src="" alt="N.E.S Logo" style="height:64px; object-fit:contain; margin-bottom:10px;" />
+        <h2 style="font-size:20px; font-weight:700; color:#0f172a;">ระบบจัดซื้อ PR / PO & คลังสินค้า WMS</h2>
+        <div style="font-size:13px; color:#64748b; margin-top:2px;">บริษัท นวพล เอ็นจิเนียริ่ง แอนด์ ซัพพลาย จำกัด</div>
+      </div>
+
+      <div id="login-error-box" style="display:none; background:#fee2e2; color:#b91c1c; padding:10px 12px; border-radius:8px; font-size:13px; font-weight:600; margin-bottom:14px;"></div>
+
+      <form onsubmit="handleLoginSubmit(event)">
+        <div class="form-group" style="margin-bottom:14px;">
+          <label class="form-label">ชื่อผู้ใช้งาน (Username)</label>
+          <input type="text" class="form-control" id="login-username" placeholder="เช่น admin, approver, purchasing" required />
+        </div>
+        <div class="form-group" style="margin-bottom:18px;">
+          <label class="form-label">รหัสผ่าน (Password)</label>
+          <input type="password" class="form-control" id="login-password" placeholder="รหัสผ่าน (ค่าเริ่มต้น: 1234)" required />
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%; padding:11px; font-size:15px;">
+          🔐 เข้าสู่ระบบ (Sign In)
+        </button>
+      </form>
+
+      <div style="margin-top:20px; padding-top:16px; border-top:1px solid #e2e8f0;">
+        <div style="font-size:12px; color:#64748b; font-weight:600; margin-bottom:8px; text-align:center;">
+          ⚡ ปุ่มลัดทดสอบเข้าสู่ระบบตามสิทธิ์ (รหัสผ่าน: 1234)
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:8px;">
+          <button type="button" class="btn btn-sm btn-outline" onclick="quickLogin('admin', '1234')">
+            👑 Admin<br/><small style="font-size:10px;color:#64748b;">ทุกสิทธิ์ + สร้าง User</small>
+          </button>
+          <button type="button" class="btn btn-sm btn-outline" onclick="quickLogin('approver', '1234')">
+            ✍️ Approver<br/><small style="font-size:10px;color:#64748b;">เซ็นอนุมัติ + ดู PR/PO</small>
+          </button>
+          <button type="button" class="btn btn-sm btn-outline" onclick="quickLogin('purchasing', '1234')">
+            🛒 Purchasing<br/><small style="font-size:10px;color:#64748b;">PR/PO + Item/Vendor + WMS</small>
+          </button>
+          <button type="button" class="btn btn-sm btn-outline" onclick="quickLogin('engineer', '1234')">
+            👤 Normal User<br/><small style="font-size:10px;color:#64748b;">เปิด/ดู PR + ดู Stock คงค้าง</small>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Main Application Shell -->
+  <div class="app-layout">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <img id="sidebar-logo-img" src="" alt="N.E.S Logo" />
+        <div>
+          <div class="sidebar-brand-title">NES-PO & WMS</div>
+          <div class="sidebar-brand-sub">บจก. นวพล เอ็นจิเนียริ่งฯ</div>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="nav-section-label" id="nav-po-section-label">ระบบใบขอซื้อ & ใบสั่งซื้อ (PR / PO)</div>
+        <button class="nav-btn active" data-tab="dashboard" id="nav-btn-dashboard" onclick="switchTab('dashboard')">
+          <span class="nav-btn-left">📊 แดชบอร์ด & รายการ PO</span>
+        </button>
+        <button class="nav-btn" data-tab="prs" id="nav-btn-prs" onclick="switchTab('prs')">
+          <span class="nav-btn-left">📋 ใบขอซื้อ (Issue PR)</span>
+          <span class="nav-badge" id="nav-open-pr-badge" style="display:none; background:#2563eb;">0</span>
+        </button>
+        <button class="nav-btn" data-tab="create-po" id="nav-btn-create-po" onclick="startNewPo()">
+          <span class="nav-btn-left">📝 เปิดใบสั่งซื้อ (Issue PO)</span>
+        </button>
+        <button class="nav-btn" data-tab="approvals" id="nav-btn-approvals" onclick="switchTab('approvals')">
+          <span class="nav-btn-left">✍️ อนุมัติใบสั่งซื้อ (Approve)</span>
+          <span class="nav-badge" id="nav-pending-badge" style="display:none">0</span>
+        </button>
+        <button class="nav-btn" data-tab="price-history" id="nav-btn-price-history" onclick="switchTab('price-history')">
+          <span class="nav-btn-left">📈 ประวัติ & เปรียบเทียบราคา</span>
+        </button>
+
+        <div class="nav-section-label" id="nav-wms-section-label">คลังสินค้า & ฐานข้อมูลหลัก</div>
+        <button class="nav-btn" data-tab="wms" id="nav-btn-wms" onclick="switchTab('wms')">
+          <span class="nav-btn-left" id="nav-label-wms">📦 คลังสินค้า & สต็อก (WMS)</span>
+        </button>
+        <button class="nav-btn" data-tab="items" id="nav-btn-items" onclick="switchTab('items')">
+          <span class="nav-btn-left">🔩 ข้อมูลสินค้า (Items)</span>
+        </button>
+        <button class="nav-btn" data-tab="vendors" id="nav-btn-vendors" onclick="switchTab('vendors')">
+          <span class="nav-btn-left">🏭 ข้อมูลผู้ขาย (Vendors)</span>
+        </button>
+
+        <div class="nav-section-label" id="nav-admin-section-label">ตั้งค่าระบบและผู้ใช้งาน</div>
+        <button class="nav-btn" data-tab="users" id="nav-btn-users" onclick="switchTab('users')">
+          <span class="nav-btn-left">👥 จัดการผู้ใช้งาน (Users)</span>
+        </button>
+        <button class="nav-btn" data-tab="settings" id="nav-btn-settings" onclick="switchTab('settings')">
+          <span class="nav-btn-left">⚙️ ตั้งค่าเอกสาร PO (FM-PU-02)</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div>PR: <strong>FM-PU-01 / Rev.06</strong></div>
+        <div>PO: <strong id="sidebar-form-code">FM-PU-02 / Rev.00</strong></div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <div class="main-area">
+      <header class="topbar">
+        <div>
+          <div class="topbar-title" id="topbar-title">แดชบอร์ด & รายการใบสั่งซื้อทั้งหมด</div>
+          <div class="topbar-subtitle" id="topbar-subtitle">บริหารจัดการใบขอซื้อ (PR) ใบสั่งซื้อ (PO) การอนุมัติ และคลังสินค้า (WMS)</div>
+        </div>
+
+        <div class="topbar-actions">
+          <div class="role-switcher" style="padding:6px 12px;">
+            <span>👤 ผู้ใช้งาน: <strong id="topbar-user-name">-</strong></span>
+            <span id="topbar-user-role-badge" class="badge badge-tag" style="margin-left:4px;">-</span>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="handleLogout()">🚪 ออกจากระบบ</button>
+        </div>
+      </header>
+
+      <main class="content-container" id="app-view">
+        <!-- Dynamic Content Rendered by app.js -->
+      </main>
+    </div>
+  </div>
+
+  <!-- Modal 1: View Official PO Document (FM-PU-02 PDF / Print & Approve) -->
+  <div class="modal-backdrop" id="po-pdf-modal">
+    <div class="modal-box modal-xl">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <strong style="font-size:16px;" id="po-modal-title">เอกสารใบสั่งซื้อ (PO)</strong>
+          <span id="po-modal-status-badge"></span>
+          <span id="po-modal-pr-trace-badge"></span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          <div id="po-modal-approval-actions" style="display:flex; gap:8px;"></div>
+          <button class="btn btn-primary" onclick="printCurrentPo()">🖨️ พิมพ์ / บันทึกเป็น PDF (A4)</button>
+          <button class="btn btn-outline" onclick="closeModal('po-pdf-modal')">✕ ปิดหน้าต่าง</button>
+        </div>
+      </div>
+      <div class="modal-body" style="background:#525659; padding:20px;">
+        <div id="po-modal-reject-banner" style="display:none; background:#fee2e2; color:#991b1b; border:1px solid #f87171; padding:10px 14px; border-radius:8px; margin-bottom:14px; font-weight:600;"></div>
+        <div class="po-paper-wrapper" style="padding:0;">
+          <div id="po-pdf-preview-body"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 2: Interactive Touch / Stylus Signature Pad for PO Approval (iPad / Tablet / PC) -->
+  <div class="modal-backdrop" id="approve-signature-modal">
+    <div class="modal-box" style="max-width:640px;">
+      <div class="modal-header">
+        <div>
+          <strong style="font-size:16px;" id="approve-sig-modal-title">✍️ วาดลายเซ็นเพื่ออนุมัติใบสั่งซื้อ (Approve & Sign PO)</strong>
+          <div style="font-size:12px; color:var(--text-muted);">รองรับการใช้นิ้วสัมผัส, ปากกา Stylus / Apple Pencil บน iPad & Tablet หรือเมาส์</div>
+        </div>
+        <button class="btn btn-sm btn-outline" onclick="closeModal('approve-signature-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="approve-sig-po-id" />
+        <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:10px 14px; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;">
+          <div>
+            <div style="font-weight:700; color:var(--primary);" id="approve-sig-po-summary">เลขที่ PO: -</div>
+            <div style="font-size:12.5px; color:#334155;" id="approve-sig-vendor-summary">ผู้ขาย: -</div>
+          </div>
+          <div style="font-size:16px; font-weight:700; color:var(--success);" id="approve-sig-total-summary">0.00 บาท</div>
+        </div>
+
+        <div style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+          <label class="form-label" style="margin:0;">กรุณาเซ็นชื่อในกรอบด้านล่าง (ผู้มีอำนาจลงนาม):</label>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <button type="button" class="btn btn-sm btn-outline" onclick="setApprovePenColor('#1e3a8a')">🔵 หมึกน้ำเงิน</button>
+            <button type="button" class="btn btn-sm btn-outline" onclick="setApprovePenColor('#0f172a')">⚫ หมึกดำ</button>
+            <button type="button" class="btn btn-sm btn-outline" style="color:var(--danger);" onclick="clearApproveTouchCanvas()">🧹 ล้างลายเซ็น</button>
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:center; background:#f8fafc; padding:10px; border-radius:10px; border:1px solid var(--border);">
+          <canvas id="approve-touch-canvas" width="560" height="200" class="touch-sig-canvas"></canvas>
+        </div>
+
+        <div class="form-group" style="margin-top:14px;">
+          <label class="form-label">หมายเหตุการอนุมัติ (ถ้ามี)</label>
+          <input type="text" class="form-control" id="approve-sig-comment" value="อนุมัติสั่งซื้อตามเสนอ" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('approve-signature-modal')">ยกเลิก</button>
+        <button class="btn btn-success" style="padding:10px 20px; font-size:14.5px;" onclick="confirmSignatureAndApprovePo()">
+          ✅ ยืนยันลายเซ็นและอนุมัติใบสั่งซื้อ
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 3: View Official PR Document (FM-PU-01 / Rev.06 Landscape PDF) -->
+  <div class="modal-backdrop" id="pr-pdf-modal">
+    <div class="modal-box modal-xl" style="max-width:1180px;">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <strong style="font-size:16px;" id="pr-modal-title">เอกสารใบขอซื้อ (Purchasing Requisition - FM-PU-01 / Rev.06)</strong>
+          <span id="pr-modal-status-badge"></span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          <div id="pr-modal-actions" style="display:flex; gap:8px;"></div>
+          <button class="btn btn-primary" onclick="printCurrentPr()">🖨️ พิมพ์ / บันทึกเป็น PDF</button>
+          <button class="btn btn-outline" onclick="closeModal('pr-pdf-modal')">✕ ปิดหน้าต่าง</button>
+        </div>
+      </div>
+      <div class="modal-body" style="background:#525659; padding:20px; overflow-x:auto;">
+        <div class="po-paper-wrapper" style="padding:0;">
+          <div id="pr-pdf-preview-body"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 4: WMS Inbound (Receive Lot) -->
+  <div class="modal-backdrop" id="wms-inbound-modal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <strong style="font-size:16px;">📥 รับสินค้าเข้าคลังตาม Lot (WMS Inbound / Receive Lot)</strong>
+        <button class="btn btn-sm btn-outline" onclick="closeModal('wms-inbound-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="form-group col-6">
+            <label class="form-label">เลขที่ Lot (Lot Number) *</label>
+            <input type="text" class="form-control" id="wms-in-lot" />
+          </div>
+          <div class="form-group col-6">
+            <label class="form-label">วันที่รับเข้าคลัง *</label>
+            <input type="date" class="form-control" id="wms-in-date" />
+          </div>
+          <div class="form-group col-12">
+            <label class="form-label">เลือกสินค้าที่รับเข้า (Item) *</label>
+            <select class="form-control" id="wms-in-item" onchange="onWmsInboundItemChange()"></select>
+          </div>
+          <div class="form-group col-12">
+            <label class="form-label">รับเข้าจากผู้ขาย (Supplier / Vendor) *</label>
+            <select class="form-control" id="wms-in-vendor"></select>
+          </div>
+          <div class="form-group col-4">
+            <label class="form-label">จำนวนที่รับเข้า *</label>
+            <input type="number" step="any" min="0.01" class="form-control" id="wms-in-qty" value="10" />
+          </div>
+          <div class="form-group col-4">
+            <label class="form-label">หน่วยนับ (Unit)</label>
+            <input type="text" class="form-control" id="wms-in-unit" value="PCS" list="unit-datalist" />
+          </div>
+          <div class="form-group col-4">
+            <label class="form-label">ราคาทุน/หน่วย (บาท)</label>
+            <input type="number" step="0.01" class="form-control" id="wms-in-cost" value="0" />
+          </div>
+          <div class="form-group col-6">
+            <label class="form-label">อ้างอิงเลขที่ใบสั่งซื้อ (PO No.)</label>
+            <input type="text" class="form-control" id="wms-in-po" placeholder="เช่น PO/NES/0062-2026" />
+          </div>
+          <div class="form-group col-6">
+            <label class="form-label">สถานที่จัดเก็บ (Location / Bin)</label>
+            <input type="text" class="form-control" id="wms-in-loc" value="ตู้ Tooling A-01" />
+          </div>
+          <div class="form-group col-12">
+            <label class="form-label">หมายเหตุ</label>
+            <input type="text" class="form-control" id="wms-in-remarks" placeholder="เช่น รับของครบตามใบส่งของ" />
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('wms-inbound-modal')">ยกเลิก</button>
+        <button class="btn btn-success" onclick="submitWmsInbound()">📥 บันทึกรับเข้า Lot สินค้า</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 5: WMS Outbound (Issue Stock from Lot) -->
+  <div class="modal-backdrop" id="wms-outbound-modal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <strong style="font-size:16px;">📤 ตัดเบิกสินค้าออกจาก Lot (WMS Outbound / Issue)</strong>
+        <button class="btn btn-sm btn-outline" onclick="closeModal('wms-outbound-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="form-group col-12">
+            <label class="form-label">เลือก Lot สินค้าที่ต้องการตัดเบิก (แสดงเฉพาะ Lot ที่มีคงเหลือ) *</label>
+            <select class="form-control" id="wms-out-lot" onchange="onWmsOutboundLotChange()"></select>
+          </div>
+          <div class="form-group col-6">
+            <label class="form-label">จำนวนคงเหลือใน Lot ปัจจุบัน</label>
+            <input type="text" class="form-control" id="wms-out-avail" disabled style="background:#f1f5f9; font-weight:700;" />
+          </div>
+          <div class="form-group col-6">
+            <label class="form-label">จำนวนที่ต้องการตัดเบิก *</label>
+            <input type="number" step="any" min="0.01" class="form-control" id="wms-out-qty" value="1" />
+          </div>
+          <div class="form-group col-6">
+            <label class="form-label">เลขที่ใบเบิก / อ้างอิง</label>
+            <input type="text" class="form-control" id="wms-out-ref" placeholder="เช่น ISS-CNC-02" />
+          </div>
+          <div class="form-group col-6">
+            <label class="form-label">แผนก / เหตุผลการเบิกใช้งาน</label>
+            <input type="text" class="form-control" id="wms-out-reason" value="เบิกใช้งานแผนกผลิต CNC" />
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('wms-outbound-modal')">ยกเลิก</button>
+        <button class="btn btn-warning" onclick="submitWmsOutbound()">📤 ยืนยันการตัดเบิกสต็อก</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 6: WMS Cycle Count (Manual Stock Check & Adjustment) -->
+  <div class="modal-backdrop" id="wms-cycle-modal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <strong style="font-size:16px;">📋 ตรวจนับสต็อกและปรับยอดคงเหลือ (Manual Stock Check / Cycle Count)</strong>
+        <button class="btn btn-sm btn-outline" onclick="closeModal('wms-cycle-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="form-group col-12">
+            <label class="form-label">เลือกสินค้าที่ตรวจนับ (Item) *</label>
+            <select class="form-control" id="wms-cc-item" onchange="onWmsCycleItemChange()"></select>
+          </div>
+          <div class="form-group col-12">
+            <label class="form-label">เลือก Lot ที่ต้องการปรับปรุงยอด (หรือสร้าง Lot ปรับยอดใหม่หากยังไม่มี Lot)</label>
+            <select class="form-control" id="wms-cc-lot" onchange="onWmsCycleLotChange()"></select>
+          </div>
+          <div class="form-group col-6">
+            <label class="form-label">ยอดคงเหลือในระบบปัจจุบัน (System Qty)</label>
+            <input type="text" class="form-control" id="wms-cc-sys-qty" disabled style="background:#f1f5f9; font-weight:700;" />
+          </div>
+          <div class="form-group col-6">
+            <label class="form-label">ยอดที่ตรวจนับได้จริง (Actual Counted Qty) *</label>
+            <input type="number" step="any" min="0" class="form-control" id="wms-cc-actual-qty" style="font-weight:700; color:var(--primary);" />
+          </div>
+          <div class="form-group col-12">
+            <label class="form-label">สาเหตุ / หมายเหตุการตรวจนับสต็อก (Cycle Count Reason)</label>
+            <input type="text" class="form-control" id="wms-cc-reason" value="ตรวจนับสต็อกประจำเดือน (Manual Cycle Count)" />
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('wms-cycle-modal')">ยกเลิก</button>
+        <button class="btn btn-primary" onclick="submitWmsCycleCount()">✅ บันทึกผลตรวจนับและปรับสต็อก</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 7: Add / Edit Item -->
+  <div class="modal-backdrop" id="item-modal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <strong style="font-size:16px;" id="item-modal-title">เพิ่มรายการสินค้าใหม่ (Item)</strong>
+        <button class="btn btn-sm btn-outline" onclick="closeModal('item-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="item-form-id" />
+        <input type="hidden" id="item-form-quick-row-idx" value="" />
+        <div class="form-grid">
+          <div class="form-group col-6">
+            <label class="form-label">หมวดหมู่สินค้า (Item Type) *</label>
+            <select class="form-control" id="item-form-category" onchange="onItemCategoryModalChange()"></select>
+          </div>
+          <div class="form-group col-6">
+            <label class="form-label">
+              <span>รหัสสินค้า (Item Code) *</span>
+              <span style="font-size:11px; color:var(--primary); cursor:pointer;" onclick="onItemCategoryModalChange(true)">↻ รันรหัสอัตโนมัติ</span>
+            </label>
+            <input type="text" class="form-control" id="item-form-code" placeholder="เช่น INS-386" />
+          </div>
+          <div class="form-group col-12">
+            <label class="form-label">ชื่อและรายละเอียดสินค้า (Item Name / Spec) *</label>
+            <input type="text" class="form-control" id="item-form-name" placeholder="เช่น INSERT SEMT 13T3AGSN-JH VP15TF" />
+          </div>
+          <div class="form-group col-4">
+            <label class="form-label">หน่วยนับเริ่มต้น (Default Unit)</label>
+            <input type="text" class="form-control" id="item-form-unit" value="PCS" list="unit-datalist" />
+            <datalist id="unit-datalist">
+              <option value="PCS"></option>
+              <option value="SET"></option>
+              <option value="BOX"></option>
+              <option value="PACK"></option>
+              <option value="KG"></option>
+              <option value="M"></option>
+              <option value="L"></option>
+              <option value="LOT"></option>
+            </datalist>
+          </div>
+          <div class="form-group col-4">
+            <label class="form-label">ผู้ดูแล / วิศวกร (PIC)</label>
+            <input type="text" class="form-control" id="item-form-pic" value="วิศวกร Tooling" />
+          </div>
+          <div class="form-group col-4">
+            <label class="form-label">ราคาอ้างอิง/หน่วยล่าสุด (บาท)</label>
+            <input type="number" step="0.01" class="form-control" id="item-form-price" placeholder="เช่น 170.00" />
+          </div>
+          <div class="form-group col-12">
+            <label class="form-label">รูปภาพสินค้า (Picture) — อัปโหลดไฟล์รูป หรือใช้ไอคอนหมวดหมู่อัตโนมัติ</label>
+            <div style="display:flex; align-items:center; gap:14px;">
+              <img id="item-form-img-preview" src="" alt="Preview" style="width:68px; height:68px; border-radius:8px; border:1px solid var(--border); object-fit:cover; background:#f8fafc;" />
+              <div style="flex:1;">
+                <input type="file" accept="image/*" class="form-control" id="item-form-file" onchange="onItemImageUpload(event)" />
+                <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">รูปภาพจะไปแสดงใน Dropdown ตอนเปิดใบสั่งซื้อ (PO) ทันที</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('item-modal')">ยกเลิก</button>
+        <button class="btn btn-primary" onclick="saveItemModal()">💾 บันทึกข้อมูลสินค้า</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 8: Add / Edit Vendor -->
+  <div class="modal-backdrop" id="vendor-modal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <strong style="font-size:16px;" id="vendor-modal-title">เพิ่มข้อมูลผู้ขาย (Supplier / Vendor)</strong>
+        <button class="btn btn-sm btn-outline" onclick="closeModal('vendor-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="vendor-form-id" />
+        <div class="form-grid">
+          <div class="form-group col-4">
+            <label class="form-label">รหัสผู้ขาย (ID No.) *</label>
+            <input type="text" class="form-control" id="vendor-form-code" placeholder="เช่น 412/2569" />
+          </div>
+          <div class="form-group col-8">
+            <label class="form-label">ชื่อบริษัทผู้ขาย (Vendor Name) *</label>
+            <input type="text" class="form-control" id="vendor-form-name" placeholder="เช่น MATERIALS CARBIDE CO., LTD." />
+          </div>
+          <div class="form-group col-12">
+            <label class="form-label">ที่อยู่ (Address)</label>
+            <input type="text" class="form-control" id="vendor-form-address" placeholder="ที่อยู่สำหรับออกใบสั่งซื้อ" />
+          </div>
+          <div class="form-group col-4">
+            <label class="form-label">โทรศัพท์ (Tel)</label>
+            <input type="text" class="form-control" id="vendor-form-tel" placeholder="เช่น 02.370.1599" />
+          </div>
+          <div class="form-group col-4">
+            <label class="form-label">แฟกซ์ (Fax)</label>
+            <input type="text" class="form-control" id="vendor-form-fax" placeholder="เช่น 02.370.1303-4" />
+          </div>
+          <div class="form-group col-4">
+            <label class="form-label">มือถือ (Mobile)</label>
+            <input type="text" class="form-control" id="vendor-form-mobile" placeholder="เช่น 085-825-3543" />
+          </div>
+          <div class="form-group col-4">
+            <label class="form-label">ชื่อผู้ติดต่อ (Contact Name)</label>
+            <input type="text" class="form-control" id="vendor-form-contact" placeholder="เช่น คุณมิค" />
+          </div>
+          <div class="form-group col-4">
+            <label class="form-label">อีเมล (Email)</label>
+            <input type="text" class="form-control" id="vendor-form-email" placeholder="เช่น mic@mtcb.co.th" />
+          </div>
+          <div class="form-group col-4">
+            <label class="form-label">เงื่อนไขการชำระเงินเริ่มต้น</label>
+            <input type="text" class="form-control" id="vendor-form-payment" value="CREDIT 30 DAYS" list="payment-term-list" />
+            <datalist id="payment-term-list">
+              <option value="CREDIT 30 DAYS"></option>
+              <option value="CREDIT 45 DAYS"></option>
+              <option value="CREDIT 60 DAYS"></option>
+              <option value="เงินสด (CASH)"></option>
+              <option value="โอนเงินก่อนส่งของ"></option>
+            </datalist>
+          </div>
+          <div class="form-group col-12">
+            <label class="form-label">รายละเอียดสินค้า/บริการของผู้ขาย (Description)</label>
+            <input type="text" class="form-control" id="vendor-form-desc" placeholder="เช่น ตัวแทนจำหน่าย MITSUBISHI, ดอกสว่าน, เม็ดมีด" />
+          </div>
+          <div class="form-group col-12">
+            <label class="form-label">หมวดหมู่ผู้ขาย (Vendor Tags — เลือกได้หลายหมวดแบบ M:N)</label>
+            <div id="vendor-form-tags-wrap" style="display:flex; flex-wrap:wrap; gap:8px; padding:10px; border:1px solid var(--border); border-radius:8px; background:var(--surface-alt);"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('vendor-modal')">ยกเลิก</button>
+        <button class="btn btn-primary" onclick="saveVendorModal()">💾 บันทึกข้อมูลผู้ขาย</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 9: Add / Edit User (Admin Only) -->
+  <div class="modal-backdrop" id="user-modal">
+    <div class="modal-box" style="max-width:560px;">
+      <div class="modal-header">
+        <strong style="font-size:16px;" id="user-modal-title">👥 สร้างบัญชีผู้ใช้งานใหม่ (Admin Only)</strong>
+        <button class="btn btn-sm btn-outline" onclick="closeModal('user-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="user-form-id" />
+        <div class="form-grid">
+          <div class="form-group col-6">
+            <label class="form-label">Username (สำหรับใช้ Login) *</label>
+            <input type="text" class="form-control" id="user-form-username" placeholder="เช่น buyer02" />
+          </div>
+          <div class="form-group col-6">
+            <label class="form-label">รหัสผ่าน (Password) *</label>
+            <input type="password" class="form-control" id="user-form-password" placeholder="ระบุรหัสผ่าน" />
+          </div>
+          <div class="form-group col-12">
+            <label class="form-label">ชื่อ - นามสกุล / ตำแหน่งที่แสดงในเอกสาร *</label>
+            <input type="text" class="form-control" id="user-form-fullname" placeholder="เช่น คุณสมหญิง (เจ้าหน้าที่จัดซื้อ)" />
+          </div>
+          <div class="form-group col-6">
+            <label class="form-label">บทบาทสิทธิ์การใช้งาน (Role) *</label>
+            <select class="form-control" id="user-form-role">
+              <option value="NORMAL_USER">4. Normal User (แผนกอื่น ๆ / เปิด PR, ดูประวัติ PR และดูจำนวน Stock คงค้างใน Store)</option>
+              <option value="PURCHASING">3. Purchasing (ฝ่ายจัดซื้อ / เปิด PR-PO / แก้ไข Vendor-Item / WMS)</option>
+              <option value="APPROVER">2. Approver (ผู้อนุมัติ PO / ดูรายละเอียด PR-PO ทั้งหมด)</option>
+              <option value="ADMIN">1. Admin (ผู้ดูแลระบบ / ใช้งานและแก้ไขได้ทุกส่วน + สร้าง User)</option>
+            </select>
+          </div>
+          <div class="form-group col-6">
+            <label class="form-label">แผนก / หน่วยงาน (Department)</label>
+            <input type="text" class="form-control" id="user-form-dept" placeholder="เช่น แผนกจัดซื้อ" />
+          </div>
+          <div class="form-group col-12">
+            <label class="form-label">อีเมล (Email)</label>
+            <input type="text" class="form-control" id="user-form-email" placeholder="เช่น user@nes.co.th" />
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('user-modal')">ยกเลิก</button>
+        <button class="btn btn-primary" onclick="saveUserModal()">💾 บันทึกข้อมูลผู้ใช้งาน</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden Print Container for Direct A4 PDF Printing (Both PO and PR) -->
+  <div id="print-po-container"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
